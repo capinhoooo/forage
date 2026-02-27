@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+
+# Environment (contains seeds, API keys, DB credentials)
+.env
+.env.local
+.env.*.local
+
+# Build output
+web/.output/
+web/.vinxi/
+dist/
+*.tsbuildinfo
+
+# Prisma generated client (regenerate with: bun run db:generate)
+backend/prisma/generated/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Internal planning docs (not for public repo)
+PLAN.md
+NEXT_PLAN.md
+MAX_PLAN.md
+STRATEGY.md
+HACKATHONS.md
+NEXT.md
+WDK_NEXT.md
+RULES.md
+WDK.md
+MONEY.md
+SDK.md
+INDEXER.md
+SURVIVALAGENT.md
+benjiStyle.md
+forageWebTask.md
+backend/AGENT_CLIENT.md
+backend/FEATURE.md
+backend/FEATURE-NEXT.md
+backend/MATTERS.md
+backend/UPGRADE_MCP.md
+backend/USDT.md
+backend/YIELD.md
+web/FRONTEND_STRUCTURE_GUIDE.md
+web/progress.md
+
+# Claude memory (personal, cross-session)
+memory/
+
+# Logs
+*.log
+npm-debug.log*
+

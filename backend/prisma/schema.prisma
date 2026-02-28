@@ -1,0 +1,107 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String   @id @default(cuid())
+  walletAddress String   @unique
+  nonce        String?   // For signature verification
+  lastSignIn   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model ErrorLog {
+  id         String   @id @default(cuid())
+  errorCode  String
+  message    String
+  statusCode Int
+  stack      String?  @db.Text
+  context    String?  @db.Text
+  userId     String?
+  method     String?
+  path       String?
+  userAgent  String?  @db.Text
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([errorCode])
+  @@index([createdAt])
+}
+
+// SurvivalAgent models
+
+model AgentState {
+  id              String   @id @default(cuid())
+  state           String   // THRIVING, STABLE, CAUTIOUS, DESPERATE, CRITICAL, DEAD
+  balanceUsdc     BigInt   @default(0) // USDC balance in base units (6 decimals)
+  balanceUsdt     BigInt   @default(0) // USDt balance in base units (6 decimals, Eth Sepolia)
+  balanceEth      BigInt   @default(0) // ETH balance in wei
+  monthlyBurn     BigInt   @default(0) // estimated monthly cost in USDC base units
+  runway          Float    @default(0) // months of runway remaining
+  aaveSupplied    BigInt   @default(0) // total supplied to Aave
+  aaveApy         Float    @default(0) // current APY percentage
+  totalEarned     BigInt   @default(0) // lifetime earnings in USDC base units
+  totalSpent      BigInt   @default(0) // lifetime costs in USDC base units
+  requestsServed  Int      @default(0) // lifetime requests served
+  uptimeSeconds   Int      @default(0) // total uptime
+  chain           String   @default("base-sepolia")
+  walletAddress   String   @default("")
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([state])
+}
+
+model AgentTransaction {
+  id          String   @id @default(cuid())
+  type        String   // EARN, SPEND_LLM, SPEND_GAS, AAVE_SUPPLY, AAVE_WITHDRAW, BRIDGE, SWAP
+  amount      BigInt   // in token base units
+  token       String   // USDC, USDT, ETH
+  chain       String   // base-sepolia, arbitrum-sepolia
+  txHash      String?  // on-chain tx hash
+  description String   // human-readable description
+  metadata    String?  @db.Text // JSON with extra context
+  createdAt   DateTime @default(now())
+
+  @@index([type])
+  @@index([createdAt])
+}
+
+model CostLog {
+  id        String   @id @default(cuid())
+  category  String   // LLM, GAS, STORAGE, INFRASTRUCTURE
+  amount    BigInt   // cost in USDC base units
+  detail    String   // e.g. "claude-haiku: 1500 input + 800 output tokens"
+  createdAt DateTime @default(now())
+
+  @@index([category])
+  @@index([createdAt])
+}
+
+model ServiceRequest {
+  id          String   @id @default(cuid())
+  service     String   // analyze, summarize, review
+  price       BigInt   // price charged in USDC base units
+  payerAddr   String   @default("") // payer wallet address
+  protocol    String   @default("t402") // x402 or t402
+  chain       String   @default("eip155:84532")
+  txHash      String?  // settlement tx hash
+  status      String   @default("PENDING") // PENDING, COMPLETED, FAILED
+  inputSize   Int?     // input data size
+  outputSize  Int?     // output data size
+  llmCost     BigInt?  // cost of LLM call for this request
+  createdAt   DateTime @default(now())
+
+  @@index([service])
+  @@index([createdAt])
+  @@index([status])
+}

@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["..#bun"]
+
+[phases.install]
+cmds = ["cd backend && bun install"]
+
+[phases.build]
+cmds = ["cd backend && bunx prisma generate --config prisma/prisma.config.ts"]
+
+[start]
+cmd = "cd backend && bun start"

@@ -1,0 +1,7 @@
+[build]
+  command = "npm install --legacy-peer-deps && npx vite build"
+  publish = "dist"
+
+[functions]
+  directory = ".netlify/functions-internal"
+  node_bundler = "esbuild"

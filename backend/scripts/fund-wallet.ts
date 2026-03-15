@@ -1,23 +1,25 @@
 #!/usr/bin/env bun
 /**
- * Fund the Forage agent wallet with testnet tokens.
+ * Fund the Forage agent wallet with Aave test tokens matching earned surplus.
  *
- * What this script does:
- * 1. Shows the agent's wallet address
- * 2. Checks current balances (ETH, Circle USDC, Aave USDC, Aave USDT)
- * 3. Calls the Aave faucet contract to mint Aave test USDC and USDT
- * 4. Prints instructions for manual faucets (ETH gas, Circle USDC)
+ * Mirrors the agent's Circle USDC earnings into Aave test USDC/USDT so the
+ * yield router has tokens it can actually supply to Aave on testnet.
+ * (On mainnet this wouldn't be needed since Aave accepts real USDC.)
+ *
+ * The mint amount = agent's Circle USDC balance minus 2x monthly burn reserve.
+ * This keeps the demo realistic: yield supplied matches what the agent earned.
  *
  * Usage:
- *   bun run scripts/fund-wallet.ts              # Check balances + mint Aave tokens
- *   bun run scripts/fund-wallet.ts --mint-only   # Only mint Aave tokens (skip balance check)
+ *   bun run scripts/fund-wallet.ts                # Mint surplus as Aave tokens
+ *   bun run scripts/fund-wallet.ts --check        # Just show balances, no mint
+ *   bun run scripts/fund-wallet.ts --amount 5     # Mint exactly $5 of each
  */
 
 import '../dotenv.ts';
 
 import { JsonRpcProvider, Contract, formatUnits, parseUnits } from 'ethers';
 import { getEoaWallet, getWalletAddress } from '../src/lib/wdk/index.ts';
-import { BASE_SEPOLIA_RPC, USDC_BASE_SEPOLIA } from '../src/config/main-config.ts';
+import { BASE_SEPOLIA_RPC, USDC_BASE_SEPOLIA, AGENT_MONTHLY_BURN_ESTIMATE } from '../src/config/main-config.ts';
 import { AAVE_CONFIG } from '../src/lib/wdk/config.ts';
 
 const FAUCET_ABI = [
@@ -30,87 +32,137 @@ const ERC20_ABI = [
   'function symbol() view returns (string)',
 ];
 
-async function checkBalance(provider: JsonRpcProvider, tokenAddress: string, walletAddress: string, label: string): Promise<bigint> {
+async function getBalance(provider: JsonRpcProvider, tokenAddress: string, walletAddress: string): Promise<bigint> {
   try {
     const token = new Contract(tokenAddress, ERC20_ABI, provider);
     const balance = await token.balanceOf(walletAddress);
-    const decimals = await token.decimals();
-    const symbol = await token.symbol().catch(() => label);
-    console.log(`  ${label}: ${formatUnits(balance, decimals)} ${symbol}`);
     return BigInt(balance.toString());
-  } catch (e) {
-    console.log(`  ${label}: error reading balance`);
+  } catch {
     return 0n;
   }
 }
 
+function $(amount: bigint): string {
+  return `$${(Number(amount) / 1e6).toFixed(2)}`;
+}
+
 async function main() {
-  const mintOnly = process.argv.includes('--mint-only');
+  const args = process.argv.slice(2);
+  const checkOnly = args.includes('--check');
+  const amountIdx = args.indexOf('--amount');
+  const fixedAmount = amountIdx !== -1 ? parseUnits(args[amountIdx + 1], 6) : null;
+
   const provider = new JsonRpcProvider(BASE_SEPOLIA_RPC);
   const walletAddress = await getWalletAddress();
-  const aaveConfig = AAVE_CONFIG['base-sepolia'];
+  const aave = AAVE_CONFIG['base-sepolia'];
+  // Use actual burn from the running agent if available, else fall back to config
+  let monthlyBurn = BigInt(AGENT_MONTHLY_BURN_ESTIMATE);
+  const port = process.env.APP_PORT || '3700';
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    const res = await fetch(`http://localhost:${port}/agent/status`, { signal: ctrl.signal });
+    clearTimeout(timer);
+    const json = await res.json() as any;
+    if (json.data?.monthlyBurn) {
+      monthlyBurn = BigInt(json.data.monthlyBurn);
+      console.log(`(Using live monthly burn: $${Number(monthlyBurn) / 1e6})`);
+    }
+  } catch {
+    console.log(`(Agent not reachable, using config burn: $${Number(monthlyBurn) / 1e6})`);
+  }
+  const reserve = monthlyBurn * 2n;
 
   console.log('=== Forage Wallet Funding ===\n');
-  console.log(`Wallet address: ${walletAddress}`);
-  console.log(`Chain: Base Sepolia (84532)\n`);
+  console.log(`Wallet:  ${walletAddress}`);
+  console.log(`Chain:   Base Sepolia (84532)\n`);
 
-  if (!mintOnly) {
-    // Check balances
-    console.log('Current balances:');
-    const ethBalance = await provider.getBalance(walletAddress);
-    console.log(`  ETH (gas): ${formatUnits(ethBalance, 18)} ETH`);
+  // Read all balances
+  const ethBal = await provider.getBalance(walletAddress);
+  const circleUsdcBal = await getBalance(provider, USDC_BASE_SEPOLIA, walletAddress);
+  const aaveUsdcBal = await getBalance(provider, aave.usdc, walletAddress);
+  const aaveUsdtBal = await getBalance(provider, aave.usdt, walletAddress);
+  const aUsdcBal = await getBalance(provider, aave.aUsdc, walletAddress);
+  const aUsdtBal = await getBalance(provider, aave.aUsdt, walletAddress);
 
-    await checkBalance(provider, USDC_BASE_SEPOLIA, walletAddress, 'Circle USDC (payments)');
-    const aaveUsdcBal = await checkBalance(provider, aaveConfig.usdc, walletAddress, 'Aave USDC (yield)');
-    const aaveUsdtBal = await checkBalance(provider, aaveConfig.usdt, walletAddress, 'Aave USDT (yield)');
-    await checkBalance(provider, aaveConfig.aUsdc, walletAddress, 'aUSDC (supplied)');
-    await checkBalance(provider, aaveConfig.aUsdt, walletAddress, 'aUSDT (supplied)');
-    console.log('');
+  console.log('Balances:');
+  console.log(`  ETH (gas):              ${formatUnits(ethBal, 18)} ETH`);
+  console.log(`  Circle USDC (earned):   ${$(circleUsdcBal)}`);
+  console.log(`  Aave USDC (mintable):   ${$(aaveUsdcBal)}`);
+  console.log(`  Aave USDT (mintable):   ${$(aaveUsdtBal)}`);
+  console.log(`  aUSDC (in Aave):        ${$(aUsdcBal)}`);
+  console.log(`  aUSDT (in Aave):        ${$(aUsdtBal)}`);
 
-    // Check if gas is needed
-    if (ethBalance < parseUnits('0.001', 18)) {
-      console.log('WARNING: Low ETH for gas. Get Base Sepolia ETH from:');
-      console.log('  https://faucets.chain.link/base-sepolia\n');
+  // Calculate surplus
+  const surplus = circleUsdcBal > reserve ? circleUsdcBal - reserve : 0n;
+  console.log(`\nAgent earnings:           ${$(circleUsdcBal)}`);
+  console.log(`Reserve (2x burn):        ${$(reserve)}`);
+  console.log(`Surplus for yield:        ${$(surplus)}`);
+
+  // Determine mint amount
+  let mintAmount: bigint;
+  if (fixedAmount) {
+    mintAmount = BigInt(fixedAmount.toString());
+    console.log(`\nMint amount (manual):     ${$(mintAmount)}`);
+  } else {
+    mintAmount = surplus;
+    console.log(`\nMint amount (= surplus):  ${$(mintAmount)}`);
+  }
+
+  if (mintAmount < 1_000_000n) {
+    console.log('\nSurplus < $1.00. Nothing to mint.');
+    if (circleUsdcBal === 0n) {
+      console.log('\nThe agent has no earnings yet. Run the traffic simulator first:');
+      console.log('  bun run scripts/simulate-traffic.ts --loop');
     }
+    return;
   }
 
-  // Mint Aave test tokens
-  console.log('Minting Aave test tokens via faucet...');
+  if (checkOnly) {
+    console.log('\n(--check mode, no minting)');
+    return;
+  }
+
+  if (ethBal < parseUnits('0.001', 18)) {
+    console.log('\nWARNING: Low ETH for gas. Get Base Sepolia ETH first:');
+    console.log('  https://faucets.chain.link/base-sepolia');
+    return;
+  }
+
+  // Mint
   const wallet = await getEoaWallet('base-sepolia');
-  const faucet = new Contract(aaveConfig.faucet, FAUCET_ABI, wallet);
+  const faucet = new Contract(aave.faucet, FAUCET_ABI, wallet);
 
-  const mintAmount = parseUnits('1000', 6); // 1000 USDC/USDT (6 decimals)
+  console.log(`\nMinting Aave test tokens (mirroring ${$(mintAmount)} surplus)...\n`);
 
+  // Mint USDC
   try {
-    console.log(`  Minting 1000 Aave USDC to ${walletAddress}...`);
-    const tx1 = await faucet.mint(aaveConfig.usdc, walletAddress, mintAmount);
-    console.log(`  TX: ${tx1.hash}`);
-    await tx1.wait();
-    console.log('  Aave USDC minted.');
+    process.stdout.write(`  Aave USDC ${$(mintAmount)} ... `);
+    const tx = await faucet.mint(aave.usdc, walletAddress, mintAmount);
+    await tx.wait();
+    console.log(`done (${tx.hash.slice(0, 14)}...)`);
   } catch (e: any) {
-    console.log(`  Aave USDC mint failed: ${e.message?.slice(0, 100)}`);
+    console.log(`failed: ${e.message?.slice(0, 80)}`);
   }
 
+  // Mint USDT (same amount for dual-token demo)
   try {
-    console.log(`  Minting 1000 Aave USDT to ${walletAddress}...`);
-    const tx2 = await faucet.mint(aaveConfig.usdt, walletAddress, mintAmount);
-    console.log(`  TX: ${tx2.hash}`);
-    await tx2.wait();
-    console.log('  Aave USDT minted.');
+    process.stdout.write(`  Aave USDT ${$(mintAmount)} ... `);
+    const tx = await faucet.mint(aave.usdt, walletAddress, mintAmount);
+    await tx.wait();
+    console.log(`done (${tx.hash.slice(0, 14)}...)`);
   } catch (e: any) {
-    console.log(`  Aave USDT mint failed: ${e.message?.slice(0, 100)}`);
+    console.log(`failed: ${e.message?.slice(0, 80)}`);
   }
 
-  // Post-mint balances
-  console.log('\nPost-mint balances:');
-  await checkBalance(provider, aaveConfig.usdc, walletAddress, 'Aave USDC');
-  await checkBalance(provider, aaveConfig.usdt, walletAddress, 'Aave USDT');
+  // Show updated balances
+  const newAaveUsdc = await getBalance(provider, aave.usdc, walletAddress);
+  const newAaveUsdt = await getBalance(provider, aave.usdt, walletAddress);
 
-  console.log('\n--- Manual faucets (if needed) ---');
-  console.log('Base Sepolia ETH:   https://faucets.chain.link/base-sepolia');
-  console.log('Circle USDC:        https://faucet.circle.com/');
-  console.log('Aave faucet UI:     https://app.aave.com/faucet/');
-  console.log(`\nPaste this address: ${walletAddress}`);
+  console.log('\nUpdated Aave balances:');
+  console.log(`  Aave USDC: ${$(newAaveUsdc)}`);
+  console.log(`  Aave USDT: ${$(newAaveUsdt)}`);
+  console.log('\nThe yield router will supply these on the next agent loop cycle.');
 }
 
 main().catch(console.error);

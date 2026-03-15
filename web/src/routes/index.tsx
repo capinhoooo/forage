@@ -604,37 +604,36 @@ function PnlChart() {
       </div>
       {dataPoints.length > 0 ? (
         <div style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
-          {/* Bar chart: show max 24 most recent data points */}
-          {(() => {
-            const visiblePoints = dataPoints.slice(-24)
-            const visibleMax = Math.max(...visiblePoints.map(dp => Math.max(Number(dp.revenue), Number(dp.costs))), 1)
-            const labelInterval = Math.max(1, Math.floor(visiblePoints.length / 8))
-            return (
-              <div style={{ padding: '1.25rem 1rem 0.5rem', display: 'flex', alignItems: 'flex-end', gap: '3px', height: 180 }}>
-                {visiblePoints.map((dp, i) => {
-                  const rev = Number(dp.revenue)
-                  const cost = Number(dp.costs)
-                  const revH = Math.max((rev / visibleMax) * 100, rev > 0 ? 4 : 0)
-                  const costH = Math.max((cost / visibleMax) * 100, cost > 0 ? 4 : 0)
-                  const d = new Date(dp.timestamp)
-                  const label = period === '7d' || period === '30d'
+          <div style={{ padding: '1rem 0.5rem 0' }}>
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={dataPoints.map(dp => {
+                const d = new Date(dp.timestamp)
+                return {
+                  time: period === '7d' || period === '30d'
                     ? d.toLocaleDateString([], { month: 'short', day: 'numeric' })
-                    : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                  return (
-                    <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end', minWidth: 0 }} title={`${label}\nRev: $${(rev/1e6).toFixed(4)}\nCost: $${(cost/1e6).toFixed(4)}`}>
-                      <div style={{ display: 'flex', gap: '1px', alignItems: 'flex-end', width: '100%', justifyContent: 'center', flex: 1 }}>
-                        {rev > 0 && <div style={{ width: '45%', maxWidth: 18, height: `${revH}%`, background: '#22c55e', borderRadius: '3px 3px 0 0', minWidth: 4, transition: 'height 300ms ease-out' }} />}
-                        {cost > 0 && <div style={{ width: '45%', maxWidth: 18, height: `${costH}%`, background: '#ef4444', borderRadius: '3px 3px 0 0', minWidth: 4, opacity: 0.65, transition: 'height 300ms ease-out' }} />}
-                      </div>
-                      {i % labelInterval === 0 && (
-                        <span style={{ fontSize: '0.5625rem', color: 'rgba(0,0,0,0.25)', whiteSpace: 'nowrap', marginTop: 4 }}>{label}</span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })()}
+                    : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                  revenue: Number(dp.revenue) / 1e6,
+                  costs: Number(dp.costs) / 1e6,
+                }
+              })} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="pnlRevGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#22c55e" stopOpacity={0.3} />
+                    <stop offset="100%" stopColor="#22c55e" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="pnlCostGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ef4444" stopOpacity={0.2} />
+                    <stop offset="100%" stopColor="#ef4444" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'rgba(0,0,0,0.25)' }} tickLine={false} axisLine={false} interval={Math.max(0, Math.floor(dataPoints.length / 8) - 1)} />
+                <YAxis tick={{ fontSize: 10, fill: 'rgba(0,0,0,0.25)' }} tickLine={false} axisLine={false} tickFormatter={v => `$${v.toFixed(2)}`} />
+                <Tooltip contentStyle={{ fontSize: '0.75rem', borderRadius: 8, border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 4px 12px rgba(0,0,0,0.06)' }} formatter={(v: number) => [`$${v.toFixed(4)}`, '']} />
+                <Area type="monotone" dataKey="revenue" stroke="#22c55e" strokeWidth={1.5} fill="url(#pnlRevGrad)" name="Revenue" />
+                <Area type="monotone" dataKey="costs" stroke="#ef4444" strokeWidth={1.5} fill="url(#pnlCostGrad)" name="Costs" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
           {/* Summary footer */}
           <div style={{ padding: '0.625rem 1rem', borderTop: '1px solid rgba(0,0,0,0.04)', display: 'flex', gap: '1.5rem', fontSize: '0.75rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>

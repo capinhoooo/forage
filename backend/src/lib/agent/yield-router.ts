@@ -515,6 +515,37 @@ async function routeYieldForToken(
     const currentRiskAdj = currentRate?.riskAdjustedApy || 0;
 
     if (best.riskAdjustedApy - currentRiskAdj < MIN_APY_DIFF) {
+      // Already in best protocol. But check if we have more surplus to add.
+      const reserve = tokenType === 'USDC' ? monthlyBurn * 2n : 0n;
+      const tokenAddr = getTokenAddress(currentPosition.protocol, currentPosition.chain);
+      if (tokenAddr) {
+        try {
+          const provider = new JsonRpcProvider(CHAINS[currentPosition.chain].provider);
+          const tokenContract = new Contract(tokenAddr, ERC20_ABI, provider);
+          const eoaAddr = await getEoaAddress();
+          const walletBalance = BigInt((await tokenContract.balanceOf(eoaAddr)).toString());
+          const surplus = walletBalance > reserve ? walletBalance - reserve : 0n;
+
+          if (surplus >= MIN_SUPPLY_AMOUNT) {
+            console.log(`[YieldRouter] [${tokenType}] Adding ${Number(surplus) / 1e6} surplus to existing ${currentPosition.protocol} position`);
+            const result = await supplyToProtocol(currentPosition.protocol, surplus, currentPosition.chain);
+            if (result) {
+              return {
+                action: 'SUPPLY',
+                protocol: currentPosition.protocol,
+                chain: currentPosition.chain,
+                amount: surplus,
+                token: tokenType,
+                reasoning: `[${tokenType}] Added ${Number(surplus) / 1e6} to existing ${currentPosition.protocol} position at ${(currentRiskAdj * 100).toFixed(2)}% APY.`,
+                rates,
+              };
+            }
+          }
+        } catch {
+          // Balance check failed, just hold
+        }
+      }
+
       return {
         action: 'HOLD',
         reasoning: `[${tokenType}] Position in ${currentPosition.protocol} (${(currentRiskAdj * 100).toFixed(2)}%) near best. Holding.`,

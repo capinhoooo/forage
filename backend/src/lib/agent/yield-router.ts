@@ -351,12 +351,14 @@ async function supplyToProtocol(
     console.log(`[YieldRouter] Supply tx: ${supplyTx.hash}`);
     return { hash: supplyTx.hash, fee };
   } catch (error: any) {
-    // Handle Aave supply cap exceeded (error code "51")
-    const errStr = String(error);
-    if (errStr.includes('51') || errStr.includes('SUPPLY_CAP_EXCEEDED')) {
+    const errMsg = error?.message || String(error);
+    const shortErr = errMsg.slice(0, 200);
+    if (errMsg.includes('51') || errMsg.includes('SUPPLY_CAP_EXCEEDED') || errMsg.includes('supply cap')) {
       console.log(`[YieldRouter] Supply to ${protocol} on ${chain}: SUPPLY_CAP_EXCEEDED. Skipping.`);
+    } else if (errMsg.includes('NUMERIC_FAULT')) {
+      console.log(`[YieldRouter] Supply to ${protocol} on ${chain}: NUMERIC_FAULT (ethers encoding). Amount: ${amount}, token: ${PROTOCOL_CONFIGS[protocol].token}`);
     } else {
-      console.error(`[YieldRouter] Supply to ${protocol} failed:`, error);
+      console.error(`[YieldRouter] Supply to ${protocol} on ${chain} failed: ${shortErr}`);
     }
     return null;
   }
@@ -515,34 +517,43 @@ async function routeYieldForToken(
     const currentRiskAdj = currentRate?.riskAdjustedApy || 0;
 
     if (best.riskAdjustedApy - currentRiskAdj < MIN_APY_DIFF) {
-      // Already in best protocol. But check if we have more surplus to add.
+      // Already in best protocol. Check if we have earned surplus to add.
+      // Use liquidBalance (Circle USDC from earnings) as the cap, NOT the Aave token balance.
+      // On testnet, Aave uses separate faucet tokens. We only supply what the agent actually earned.
       const reserve = tokenType === 'USDC' ? monthlyBurn * 2n : 0n;
-      const tokenAddr = getTokenAddress(currentPosition.protocol, currentPosition.chain);
-      if (tokenAddr) {
-        try {
-          const provider = new JsonRpcProvider(CHAINS[currentPosition.chain].provider);
-          const tokenContract = new Contract(tokenAddr, ERC20_ABI, provider);
-          const eoaAddr = await getEoaAddress();
-          const walletBalance = BigInt((await tokenContract.balanceOf(eoaAddr)).toString());
-          const surplus = walletBalance > reserve ? walletBalance - reserve : 0n;
+      const earnedSurplus = liquidBalance > reserve ? liquidBalance - reserve : 0n;
 
-          if (surplus >= MIN_SUPPLY_AMOUNT) {
-            console.log(`[YieldRouter] [${tokenType}] Adding ${Number(surplus) / 1e6} surplus to existing ${currentPosition.protocol} position`);
-            const result = await supplyToProtocol(currentPosition.protocol, surplus, currentPosition.chain);
-            if (result) {
-              return {
-                action: 'SUPPLY',
-                protocol: currentPosition.protocol,
-                chain: currentPosition.chain,
-                amount: surplus,
-                token: tokenType,
-                reasoning: `[${tokenType}] Added ${Number(surplus) / 1e6} to existing ${currentPosition.protocol} position at ${(currentRiskAdj * 100).toFixed(2)}% APY.`,
-                rates,
-              };
+      if (earnedSurplus >= MIN_SUPPLY_AMOUNT) {
+        // Verify we have enough Aave tokens to cover the earned surplus
+        const tokenAddr = getTokenAddress(currentPosition.protocol, currentPosition.chain);
+        if (tokenAddr) {
+          try {
+            const provider = new JsonRpcProvider(CHAINS[currentPosition.chain].provider);
+            const tokenContract = new Contract(tokenAddr, ERC20_ABI, provider);
+            const eoaAddr = await getEoaAddress();
+            const aaveTokenBalance = BigInt((await tokenContract.balanceOf(eoaAddr)).toString());
+
+            // Supply the smaller of: earned surplus or available Aave tokens
+            const supplyAmount = earnedSurplus < aaveTokenBalance ? earnedSurplus : aaveTokenBalance;
+
+            if (supplyAmount >= MIN_SUPPLY_AMOUNT) {
+              console.log(`[YieldRouter] [${tokenType}] Adding ${Number(supplyAmount) / 1e6} surplus to existing ${currentPosition.protocol} position (earned: ${Number(liquidBalance) / 1e6}, reserve: ${Number(reserve) / 1e6})`);
+              const result = await supplyToProtocol(currentPosition.protocol, supplyAmount, currentPosition.chain);
+              if (result) {
+                return {
+                  action: 'SUPPLY',
+                  protocol: currentPosition.protocol,
+                  chain: currentPosition.chain,
+                  amount: supplyAmount,
+                  token: tokenType,
+                  reasoning: `[${tokenType}] Added ${Number(supplyAmount) / 1e6} to existing ${currentPosition.protocol} position at ${(currentRiskAdj * 100).toFixed(2)}% APY.`,
+                  rates,
+                };
+              }
             }
+          } catch (err) {
+            console.error(`[YieldRouter] [${tokenType}] Surplus supply check failed:`, String(err).slice(0, 150));
           }
-        } catch {
-          // Balance check failed, just hold
         }
       }
 
@@ -591,10 +602,15 @@ async function routeYieldForToken(
   }
 
   // No position: try to supply surplus
-  // For USDT, no reserve deduction (USDT isn't used for costs). For USDC, keep 2x burn.
+  // Cap by earned balance (liquidBalance), not raw Aave token balance from faucet.
   const reserve = tokenType === 'USDC' ? monthlyBurn * 2n : 0n;
+  const earnedSurplus = liquidBalance > reserve ? liquidBalance - reserve : 0n;
 
-  // Try each candidate, query actual on-chain balance for its token
+  if (earnedSurplus < MIN_SUPPLY_AMOUNT) {
+    return { action: 'HOLD', reasoning: `[${tokenType}] Earned surplus $${Number(earnedSurplus) / 1e6} below minimum. Holding.`, rates };
+  }
+
+  // Try each candidate, verify Aave token availability
   const sortedRates = [...rates].filter(r => r.apy > 0);
   for (const candidate of sortedRates) {
     const tokenAddr = getTokenAddress(candidate.protocol, candidate.chain);
@@ -606,23 +622,24 @@ async function routeYieldForToken(
       const tokenContract = new Contract(tokenAddr, ERC20_ABI, provider);
       const eoaAddr = await getEoaAddress();
       candidateBalance = BigInt((await tokenContract.balanceOf(eoaAddr)).toString());
-      console.log(`[YieldRouter] [${tokenType}] EOA has ${Number(candidateBalance) / 1e6} ${tokenType} (${candidate.protocol}) on ${candidate.chain}`);
     } catch {
       candidateBalance = 0n;
     }
 
-    const surplus = candidateBalance > reserve ? candidateBalance - reserve : 0n;
-    if (surplus < MIN_SUPPLY_AMOUNT) continue;
+    // Supply the smaller of: earned surplus or available Aave tokens
+    const supplyAmount = earnedSurplus < candidateBalance ? earnedSurplus : candidateBalance;
+    if (supplyAmount < MIN_SUPPLY_AMOUNT) continue;
+    console.log(`[YieldRouter] [${tokenType}] Supplying ${Number(supplyAmount) / 1e6} (earned surplus, capped by Aave token balance ${Number(candidateBalance) / 1e6})`);
 
-    const result = await supplyToProtocol(candidate.protocol, surplus, candidate.chain);
+    const result = await supplyToProtocol(candidate.protocol, supplyAmount, candidate.chain);
     if (result) {
       return {
         action: 'SUPPLY',
         protocol: candidate.protocol,
         chain: candidate.chain,
-        amount: surplus,
+        amount: supplyAmount,
         token: tokenType,
-        reasoning: `[${tokenType}] Supplied ${Number(surplus) / 1e6} ${tokenType} to ${candidate.protocol} at ${(candidate.riskAdjustedApy * 100).toFixed(2)}% APY.`,
+        reasoning: `[${tokenType}] Supplied ${Number(supplyAmount) / 1e6} ${tokenType} to ${candidate.protocol} at ${(candidate.riskAdjustedApy * 100).toFixed(2)}% APY.`,
         rates,
       };
     }
@@ -675,7 +692,11 @@ export async function routeYield(
 
   // Route USDC and USDT independently
   const usdcResult = await routeYieldForToken('USDC', state, liquidBalance, monthlyBurn, rates, positions);
-  const usdtResult = await routeYieldForToken('USDT', state, 0n, monthlyBurn, rates, positions);
+  // For USDT: use actual USDT earnings (passed via caller or query)
+  // The agent earns USDT via t402 exact-legacy payments. Supply only what was earned.
+  const { getUsdtBalance } = await import('../wdk/index.ts');
+  const usdtEarned = await getUsdtBalance();
+  const usdtResult = await routeYieldForToken('USDT', state, usdtEarned, monthlyBurn, rates, positions);
 
   console.log(`[YieldRouter] USDC: ${usdcResult.action} | USDT: ${usdtResult.action}`);
 

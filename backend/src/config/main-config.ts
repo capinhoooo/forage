@@ -40,7 +40,7 @@ export const GROQ_API_KEY: string = process.env.GROQ_API_KEY || '';
 // RPC Providers
 export const BASE_SEPOLIA_RPC: string = process.env.BASE_SEPOLIA_RPC || 'https://sepolia.base.org';
 export const ARBITRUM_SEPOLIA_RPC: string = process.env.ARBITRUM_SEPOLIA_RPC || 'https://sepolia-rollup.arbitrum.io/rpc';
-export const ETHEREUM_SEPOLIA_RPC: string = process.env.ETHEREUM_SEPOLIA_RPC || 'https://rpc.ankr.com/eth_sepolia';
+export const ETHEREUM_SEPOLIA_RPC: string = process.env.ETHEREUM_SEPOLIA_RPC || 'https://ethereum-sepolia-rpc.publicnode.com';
 
 // ERC-4337 (Account Abstraction)
 export const PIMLICO_BUNDLER_URL: string = process.env.PIMLICO_BUNDLER_URL || 'https://public.pimlico.io/v2/11155111/rpc';

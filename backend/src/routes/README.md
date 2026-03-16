@@ -34,13 +34,17 @@ Client
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/agent/status` | GET | Full agent status: state, balances (USDC + USDT), runway, yield positions, rates, identity |
+| `/agent/status` | GET | Full agent status: state, balances (USDC + USDT), runway, yield positions, rates, identity, Spark wallet, WDK modules |
 | `/agent/history` | GET | Transaction history (pagination: `limit`, `offset`, `type` filter) |
-| `/agent/pnl` | GET | P&L breakdown by period (`1h`, `24h`, `7d`, `30d`) with hourly chart data |
+| `/agent/pnl` | GET | P&L breakdown by period (`1h`, `24h`, `7d`, `30d`) with hourly chart data. Only counts real costs (LLM, gas), not DeFi movements |
 | `/agent/yield` | GET | DeFi positions (USDC + USDT across Aave, Compound, Morpho) |
 | `/agent/services` | GET | Per-service stats: request count, total revenue, total LLM cost |
+| `/agent/decisions` | GET | AI decision history with reasoning, action, yield router result (`limit` param) |
 | `/agent/states` | GET | State history snapshots for timeline visualization |
-| `/agent/execute` | POST | Execute instruction via Claude + 19 MCP tools |
+| `/agent/spark` | GET | Spark Lightning wallet info: address, balance (sats/BTC), network, Lightning capabilities |
+| `/agent/skill` | GET | OpenClaw agent skill (SKILL.md) for agent-to-agent discovery |
+| `/agent/tools` | GET | List of all MCP tools registered on the agent |
+| `/agent/execute` | POST | Execute instruction via Claude + 34 MCP tools |
 | `/agent/reset` | POST | Kill switch (requires `AGENT_RESET_SECRET`) |
 
 ## Service Routes (`/services/*`)

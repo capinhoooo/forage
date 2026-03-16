@@ -45,8 +45,15 @@ WDK Seed (BIP-39)
     |     (mainnet chain IDs only; registered but not usable on testnet)
     |
     +-- LendingAaveEvm
-          +-- Mainnet-only address map
-          (testnet: we call Pool contract directly via ethers.js)
+    |     +-- Mainnet-only address map
+    |     (testnet: WDK MCP lending tools first, ethers.js fallback)
+    |
+    +-- WalletManagerSpark (Bitcoin Lightning)
+          +-- Zero-fee Spark transfers
+          +-- Lightning invoices (createLightningInvoice)
+          +-- Lightning payments (payLightningInvoice)
+          +-- BTC L1 bridge (deposit/withdraw)
+          +-- Network: REGTEST (dev) / MAINNET (prod)
 
 @t402/wdk (T402 Wrapper)
     |
@@ -64,6 +71,7 @@ WDK Seed (BIP-39)
 |-------|------|-----------|------|
 | Base Sepolia | EOA | `eip155:84532` | Payments, Aave V3, Velora swaps |
 | Ethereum Sepolia | ERC-4337 | `eip155:11155111` | Yield (Aave, Compound, Morpho) |
+| Spark | Lightning | `spark:regtest` | Zero-fee BTC transfers, Lightning |
 | Arbitrum Sepolia | Configured | `eip155:421614` | Potential future yield chain |
 
 ## Token Addresses
@@ -104,17 +112,21 @@ WDK Seed (BIP-39)
 - `getUsdcBalance()` / `getUsdtBalance()` / `getEthBalance()` : Token balances
 - `getAccount(chain)` / `get4337Account()` : Signing accounts
 - `getPricingClient()` : Bitfinex pricing client
+- `getSparkAccount()` / `getSparkAddress()` / `getSparkBalance()` : Spark Lightning wallet
 - `disposeWdk()` : Cleanup
 
-## WDK Modules Used (7)
+## WDK Modules Used (10)
 
 1. `@tetherto/wdk` : core orchestrator
 2. `@tetherto/wdk-wallet-evm` : EOA wallet
-3. `@tetherto/wdk-wallet-evm-erc-4337` : Smart Account
-4. `@tetherto/wdk-protocol-lending-aave-evm` : Aave V3 (mainnet addresses)
-5. `@tetherto/wdk-protocol-bridge-usdt0-evm` : USDT0 bridge (mainnet only)
-6. `@tetherto/wdk-protocol-swap-velora-evm` : Velora swap
-7. `@tetherto/wdk-pricing-bitfinex-http` : price feeds (real-time + historical)
+3. `@tetherto/wdk-wallet-evm-erc-4337` : Smart Account (Safe v1.4.1)
+4. `@tetherto/wdk-wallet-spark` : Bitcoin Lightning (zero-fee transfers)
+5. `@tetherto/wdk-protocol-lending-aave-evm` : Aave V3 lending
+6. `@tetherto/wdk-protocol-bridge-usdt0-evm` : USDT0 bridge (LayerZero)
+7. `@tetherto/wdk-protocol-swap-velora-evm` : Velora DEX swaps
+8. `@tetherto/wdk-pricing-bitfinex-http` : price feeds (real-time + historical)
+9. `@tetherto/wdk-secret-manager` : seed encryption (PBKDF2 + XSalsa20-Poly1305)
+10. `@tetherto/wdk-mcp-toolkit` : 34 MCP tools for Claude AI
 
 ## DeFi Protocol Config
 

@@ -809,9 +809,17 @@ const SERVICE_META: Record<string, ServiceMetaEntry> = {
     description: 'DEX aggregator quote (read-only)',
     category: 'defi',
     inputs: [
-      { key: 'tokenIn', label: 'Token In', placeholder: '0x...', required: true },
-      { key: 'tokenOut', label: 'Token Out', placeholder: '0x...', required: true },
-      { key: 'amount', label: 'Amount', placeholder: 'Base units', required: true },
+      { key: 'tokenIn', label: 'Token In', placeholder: '', required: true, type: 'select' as const, options: [
+        { label: 'USDC (Circle)', value: '0x036CbD53842c5426634e7929541eC2318f3dCF7e' },
+        { label: 'USDC (Aave)', value: '0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f' },
+        { label: 'WETH', value: '0x4200000000000000000000000000000000000006' },
+      ]},
+      { key: 'tokenOut', label: 'Token Out', placeholder: '', required: true, type: 'select' as const, options: [
+        { label: 'USDC (Circle)', value: '0x036CbD53842c5426634e7929541eC2318f3dCF7e' },
+        { label: 'USDC (Aave)', value: '0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f' },
+        { label: 'WETH', value: '0x4200000000000000000000000000000000000006' },
+      ]},
+      { key: 'amount', label: 'Amount', placeholder: '1.0', required: true },
     ],
   },
   'market-intel': {
@@ -1105,23 +1113,47 @@ function TryService() {
                   <label style={{ fontSize: '0.6875rem', color: 'rgba(0,0,0,0.4)', display: 'block', marginBottom: '0.25rem' }}>
                     {inp.label}{inp.required && ' *'}
                   </label>
-                  <input
-                    type="text"
-                    value={params[inp.key] || ''}
-                    onChange={e => updateParam(inp.key, e.target.value)}
-                    placeholder={inp.placeholder}
-                    style={{
-                      width: '100%',
-                      padding: '0.5rem 0.75rem',
-                      borderRadius: '8px',
-                      border: '1px solid rgba(0,0,0,0.1)',
-                      fontSize: '0.8125rem',
-                      fontFamily: 'inherit',
-                      background: 'transparent',
-                      color: '#1a1a1a',
-                      outline: 'none',
-                    }}
-                  />
+                  {(inp as any).type === 'select' ? (
+                    <select
+                      value={params[inp.key] || ''}
+                      onChange={e => updateParam(inp.key, e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(0,0,0,0.1)',
+                        fontSize: '0.8125rem',
+                        fontFamily: 'inherit',
+                        background: '#fff',
+                        color: '#1a1a1a',
+                        outline: 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <option value="">Select...</option>
+                      {((inp as any).options || []).map((opt: { label: string; value: string }) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={params[inp.key] || ''}
+                      onChange={e => updateParam(inp.key, e.target.value)}
+                      placeholder={inp.placeholder}
+                      style={{
+                        width: '100%',
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(0,0,0,0.1)',
+                        fontSize: '0.8125rem',
+                        fontFamily: 'inherit',
+                        background: 'transparent',
+                        color: '#1a1a1a',
+                        outline: 'none',
+                      }}
+                    />
+                  )}
                 </div>
               ))}
             </div>

@@ -379,14 +379,14 @@ function LifeMeter({ status }: { status: AgentStatus }) {
 
   return (
     <div className="mb-8">
-      <div className="flex items-center gap-2 mb-3">
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
         {!isDead && (
           <span
             className={heartbeatClass}
             style={{
               display: 'inline-block',
-              width: 6,
-              height: 6,
+              width: 7,
+              height: 7,
               borderRadius: '50%',
               background: barColor,
               flexShrink: 0,
@@ -394,22 +394,21 @@ function LifeMeter({ status }: { status: AgentStatus }) {
           />
         )}
         {isDead && (
-          <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#9ca3af', flexShrink: 0 }} />
+          <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#9ca3af', flexShrink: 0 }} />
         )}
-        <SectionHeading title="Life meter" />
+        <h2 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>Life meter</h2>
         <span style={{
           fontSize: '0.6875rem',
           fontWeight: 600,
-          padding: '0.0625rem 0.4375rem',
+          padding: '0.125rem 0.5rem',
           borderRadius: '9999px',
           background: `${barColor}15`,
           color: barColor,
-          marginLeft: '0.25rem',
         }}>
           {status.state}
         </span>
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <div className="flex-1 overflow-hidden" style={{ background: 'rgba(0,0,0,0.06)', borderRadius: '999px', height: '0.875rem' }}>
           <motion.div
             className={`${pulseClass} ${isThriving ? 'shimmer-bar' : ''}`}

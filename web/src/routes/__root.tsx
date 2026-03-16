@@ -35,6 +35,8 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
     ],
     links: [
       { rel: 'stylesheet', href: appCss },
+      { rel: 'icon', type: 'image/svg+xml', href: '/assets/Forage.svg' },
+      { rel: 'apple-touch-icon', href: '/assets/Forage.svg' },
     ],
   }),
   component: RootComponent,

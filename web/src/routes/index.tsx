@@ -206,7 +206,7 @@ function AgentHeader({ status }: { status: AgentStatus }) {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <h1 style={{ fontSize: '1.125rem', fontWeight: 600 }}>Forage</h1>
+            <img src="/assets/Forage.svg" alt="Forage" style={{ height: '1.5rem' }} />
             <motion.span
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}

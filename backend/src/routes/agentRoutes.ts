@@ -83,7 +83,8 @@ export const agentRoutes: FastifyPluginCallback = (app: FastifyInstance, _opts, 
       orderBy: { createdAt: 'asc' },
     });
 
-    // Group by hour
+    // Group by hour (only count real costs, not DeFi movements)
+    const COST_TYPES = new Set(['SPEND_LLM', 'SPEND_GAS', 'SPEND_SERVICE']);
     const hourlyMap = new Map<string, { revenue: bigint; costs: bigint }>();
     for (const tx of transactions) {
       const hour = new Date(tx.createdAt);
@@ -93,9 +94,11 @@ export const agentRoutes: FastifyPluginCallback = (app: FastifyInstance, _opts, 
       const entry = hourlyMap.get(key) || { revenue: 0n, costs: 0n };
       if (tx.type === 'EARN') {
         entry.revenue += tx.amount;
-      } else {
+      } else if (COST_TYPES.has(tx.type)) {
         entry.costs += tx.amount;
       }
+      // Skip AAVE_SUPPLY, AAVE_WITHDRAW, DEFI_SUPPLY, DEFI_WITHDRAW, SWAP, BRIDGE
+      // These are capital movements, not operational costs
       hourlyMap.set(key, entry);
     }
 

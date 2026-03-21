@@ -984,10 +984,10 @@ function TryService() {
     setResult(null)
 
     try {
-      setStep(selectedToken === 'USDT' ? 'Checking USDT allowance...' : 'Preparing payment...')
+      setStep(selectedToken === 'USDT' ? 'Checking USDT allowance on Eth Sepolia...' : 'Preparing payment...')
       const payFetch = createBrowserPaymentFetch(walletClient)
 
-      setStep(selectedToken === 'USDT' ? 'Approve & sign in your wallet...' : 'Sign the payment in your wallet...')
+      setStep(selectedToken === 'USDT' ? 'Check wallet for approval & signature prompts...' : 'Sign the payment in your wallet...')
       const res = await payFetch(selectedService, buildParams(), selectedToken)
 
       if (res.paid) {

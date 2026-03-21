@@ -203,16 +203,24 @@ async function processT402LegacyPayment(
   const chainId = parseInt(accepts.network.split(':')[1])
 
   // Check allowance and request approval if needed
-  const currentAllowance = await client.readContract({
-    address: tokenAddress,
-    abi: erc20Abi,
-    functionName: 'allowance',
-    args: [account.address, spender],
-  })
+  let currentAllowance: bigint
+  try {
+    currentAllowance = await client.readContract({
+      address: tokenAddress,
+      abi: erc20Abi,
+      functionName: 'allowance',
+      args: [account.address, spender],
+    })
+  } catch {
+    // If allowance check fails, assume 0 and proceed with approval
+    currentAllowance = 0n
+  }
+
+  console.log(`[t402] Allowance check: current=${currentAllowance}, required=${amount}, spender=${spender}, token=${tokenAddress}`)
 
   if (currentAllowance < amount) {
-    // Approve spender for a reasonable amount (10x the payment to avoid repeated approvals)
-    const approveAmount = amount * 10n > 1_000_000n ? amount * 10n : 1_000_000n
+    // Approve spender for a large amount to avoid repeated approvals
+    const approveAmount = amount * 100n > 10_000_000n ? amount * 100n : 10_000_000n
     try {
       const approveTxHash = await walletClient.writeContract({
         account,
@@ -222,13 +230,36 @@ async function processT402LegacyPayment(
         functionName: 'approve',
         args: [spender, approveAmount],
       })
+      console.log(`[t402] Approval tx sent: ${approveTxHash}`)
       // Wait for approval to confirm
-      await client.waitForTransactionReceipt({ hash: approveTxHash })
+      const receipt = await client.waitForTransactionReceipt({ hash: approveTxHash })
+      console.log(`[t402] Approval confirmed: status=${receipt.status}`)
+
+      if (receipt.status === 'reverted') {
+        return { status: 402, paid: false, error: 'Approval transaction reverted. You may need Sepolia ETH for gas.', token: 'USDT' }
+      }
+
+      // Verify the allowance is now sufficient
+      const newAllowance = await client.readContract({
+        address: tokenAddress,
+        abi: erc20Abi,
+        functionName: 'allowance',
+        args: [account.address, spender],
+      })
+      console.log(`[t402] Post-approval allowance: ${newAllowance}`)
+
+      if (newAllowance < amount) {
+        return { status: 402, paid: false, error: `Approval confirmed but allowance still insufficient (${newAllowance}). Try again.`, token: 'USDT' }
+      }
     } catch (err: any) {
       if (err.message?.includes('User rejected') || err.message?.includes('denied')) {
         return { status: 0, paid: false, error: 'Approval rejected by user', token: 'USDT' }
       }
-      return { status: 402, paid: false, error: `Approval failed: ${err.message}`, token: 'USDT' }
+      const msg = err.message || String(err)
+      if (msg.includes('insufficient funds') || msg.includes('gas')) {
+        return { status: 402, paid: false, error: 'Not enough ETH on Ethereum Sepolia for gas. Get testnet ETH from a faucet.', token: 'USDT' }
+      }
+      return { status: 402, paid: false, error: `Approval failed: ${msg}`, token: 'USDT' }
     }
   }
 
@@ -326,9 +357,14 @@ async function sendPayment(
     return { status: 200, paid: true, data: paidJson.data, txHash, token }
   }
 
-  // Parse error details
-  let errorDetail = paidJson?.error?.message || ''
-  if (!errorDetail && paidResponse.status === 402) {
+  // Parse error details from body or PAYMENT-REQUIRED header
+  let errorDetail = ''
+  // Try body first (could be { error: "..." } or { error: { message: "..." } })
+  if (paidJson?.error) {
+    errorDetail = typeof paidJson.error === 'string' ? paidJson.error : paidJson.error.message || ''
+  }
+  // If no body error, check PAYMENT-REQUIRED header (used by both 402 and verification failures)
+  if (!errorDetail) {
     const retryHeader = paidResponse.headers.get('payment-required') || paidResponse.headers.get('PAYMENT-REQUIRED')
     if (retryHeader) {
       try {
@@ -336,17 +372,18 @@ async function sendPayment(
         errorDetail = retryInfo.error || retryInfo.message || ''
       } catch { /* ignore */ }
     }
-    if (errorDetail.includes('nsufficient')) {
-      errorDetail = token === 'USDT'
-        ? 'Insufficient USDT balance on Ethereum Sepolia.'
-        : 'Insufficient USDC balance on Base Sepolia. Get testnet USDC from faucet.circle.com.'
-    } else if (errorDetail.includes('llowance')) {
-      errorDetail = 'Insufficient token allowance. Please approve and try again.'
-    } else if (errorDetail.includes('ignature')) {
-      errorDetail = 'Payment signature verification failed. Please try again.'
-    } else if (!errorDetail) {
-      errorDetail = `Payment rejected by server (${token}).`
-    }
+  }
+  // Map raw error reasons to user-friendly messages
+  if (errorDetail.includes('nsufficient') && errorDetail.includes('balance')) {
+    errorDetail = token === 'USDT'
+      ? 'Insufficient USDT balance on Ethereum Sepolia.'
+      : 'Insufficient USDC balance on Base Sepolia. Get testnet USDC from faucet.circle.com.'
+  } else if (errorDetail.includes('llowance')) {
+    errorDetail = 'Token allowance issue. Please try again (approval will be re-sent).'
+  } else if (errorDetail.includes('ignature')) {
+    errorDetail = 'Payment signature verification failed. Please try again.'
+  } else if (!errorDetail) {
+    errorDetail = `Payment rejected by server (${token}).`
   }
 
   return {
